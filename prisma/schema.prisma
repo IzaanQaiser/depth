@@ -1,13 +1,107 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
-  provider = "prisma-client"
-  output   = "../src/generated/prisma"
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider = "postgresql"
+  provider   = "postgresql"
+  extensions = [pgvector(map: "vector")]
+}
+
+model Repo {
+  id         String   @id @default(cuid())
+  url        String
+  name       String
+  ingestedAt DateTime @default(now())
+  files      CodeFile[]
+  symbols    Symbol[]
+  sessions   Session[]
+  knowledge  Knowledge[]
+}
+
+model CodeFile {
+  id     String @id @default(cuid())
+  repoId String
+  repo   Repo   @relation(fields: [repoId], references: [id])
+  path   String
+  symbols Symbol[]
+}
+
+model Symbol {
+  id        String @id @default(cuid())
+  repoId    String
+  repo      Repo   @relation(fields: [repoId], references: [id])
+  fileId    String
+  file      CodeFile @relation(fields: [fileId], references: [id])
+  kind      String   // function | class | method
+  name      String
+  startLine Int
+  endLine   Int
+  embedding Unsupported("vector(1536)")?
+  outgoing  SymbolEdge[] @relation("from")
+  incoming  SymbolEdge[] @relation("to")
+}
+
+model SymbolEdge {
+  id       String @id @default(cuid())
+  fromId   String
+  from     Symbol @relation("from", fields: [fromId], references: [id])
+  toId     String
+  to       Symbol @relation("to", fields: [toId], references: [id])
+  kind     String // calls | imports | contains
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  repoId    String
+  repo      Repo     @relation(fields: [repoId], references: [id])
+  userId    String
+  mode      String   // learn | assess
+  state     Json
+  startedAt DateTime @default(now())
+  endedAt   DateTime?
+  exchanges Exchange[]
+  report    Report?
+}
+
+model Exchange {
+  id            String   @id @default(cuid())
+  sessionId     String
+  session       Session  @relation(fields: [sessionId], references: [id])
+  question      String
+  groundingRefs Json     // [{file, startLine, endLine}]
+  answer        String?
+  verdict       String?  // correct | partial | fluent_but_wrong | dont_know
+  correction    String?
+  createdAt     DateTime @default(now())
+}
+
+model Knowledge {
+  id          String   @id @default(cuid())
+  repoId      String
+  repo        Repo     @relation(fields: [repoId], references: [id])
+  userId      String
+  conceptKey  String
+  confidence  Float    @default(0)
+  lastUpdated DateTime @updatedAt
+  @@unique([repoId, userId, conceptKey])
+}
+
+model Report {
+  id         String   @id @default(cuid())
+  sessionId  String   @unique
+  session    Session  @relation(fields: [sessionId], references: [id])
+  score      Float
+  heatmap    Json
+  shareToken String   @unique @default(cuid())
+  createdAt  DateTime @default(now())
+}
+
+model AssessmentLink {
+  id                 String   @id @default(cuid())
+  token              String   @unique @default(cuid())
+  repoId             String
+  createdBy          String
+  completedSessionId String?
+  createdAt          DateTime @default(now())
 }
